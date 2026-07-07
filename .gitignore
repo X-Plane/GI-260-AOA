@@ -1,0 +1,14 @@
+build/
+build*/
+dist/
+tools/
+SDK/
+rollback*/
+.vscode/
+*.psd
+*.xpl
+*.obj
+*.lib
+*.pdb
+*.ilk
+*.exp
