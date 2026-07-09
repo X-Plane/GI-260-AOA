@@ -160,6 +160,7 @@ struct PcmSample
 struct Gi260Config
 {
     bool forceWarningOnStallWarning = true;
+    bool initialStatus = true;
     float armIasKts = 50.0f;
     float audioStartupDelaySeconds = kAudioStartupDelaySeconds;
     float audioArmDelaySeconds = kAudioArmDelaySeconds;
@@ -454,7 +455,11 @@ void ApplyConfigValue(const std::string& section, const std::string& key, const 
     }
     else if (section == "System")
     {
-        if (key == "arm_ias_kts")
+        if (key == "initial_status")
+        {
+            gConfig.initialStatus = ParseBoolOrDefault(value, gConfig.initialStatus);
+        }
+        else if (key == "arm_ias_kts")
         {
             gConfig.armIasKts = std::max(0.0f, ParseFloatOrDefault(value, gConfig.armIasKts));
         }
@@ -2132,8 +2137,8 @@ void ApplyNormalAoaDisplay(float aoaUnits, float iasKnots)
 
 void UpdateAudioAlertState()
 {
-    // Sound output is not implemented yet; this state machine records what the
-    // audio layer should play once we wire in playback and volume/mute control.
+    // AOA alert audio is muted after startup/arming and begins only at the
+    // manual-defined alert thresholds: upper yellow for slow, red for fast.
     if (!gIsArmed ||
         gStartupAudioDelayRemainingSeconds > 0.0f ||
         gAudioDelayRemainingSeconds > 0.0f ||
@@ -2147,8 +2152,7 @@ void UpdateAudioAlertState()
     {
         gAudioAlertMode = AudioAlertMode::FastBeep;
     }
-    else if (IsModuleVisible(ModuleId::YELLOW_UPPER_CHEVRON) ||
-             IsModuleVisible(ModuleId::YELLOW_LOWER_CHEVRON))
+    else if (IsModuleVisible(ModuleId::YELLOW_UPPER_CHEVRON))
     {
         gAudioAlertMode = AudioAlertMode::SlowBeep;
     }
@@ -3393,7 +3397,7 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc)
     InitializeDataRefs();
     ReadAircraftReferenceValues();
     CreateGI260Menu();
-    SetToggleEnabled(true);
+    SetToggleEnabled(gConfig.initialStatus);
     XPLMRegisterFlightLoopCallback(FlightLoopCallback, 0.1f, nullptr);
 
     DebugLog("plugin loaded.");

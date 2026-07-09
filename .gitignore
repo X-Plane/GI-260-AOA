@@ -3,6 +3,7 @@ build*/
 dist/
 tools/
 SDK/
+3D Model/
 rollback*/
 .vscode/
 *.psd
