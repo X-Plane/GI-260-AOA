@@ -14,10 +14,10 @@ endif()
 if(NOT EXISTS "${XPLANE_SDK_DIR}/CHeaders/XPLM/XPLMPlugin.h")
     message(FATAL_ERROR
         "X-Plane SDK not found. Set XPLANE_SDK_DIR to the SDK root, for example "
-        "-DXPLANE_SDK_DIR=C:/X-PlaneSDK or set the XPLANE_SDK_DIR environment variable.")
+        "-DXPLANE_SDK_DIR=<X-PlaneSDK> or set the XPLANE_SDK_DIR environment variable.")
 endif()
 
-set(XPLANE_PLUGIN_ROOT_DIR "D:/SteamLibrary/steamapps/common/X-Plane 12/Resources/plugins/Garmin GI260 Popout" CACHE PATH "X-Plane plugin deployment directory")
+set(XPLANE_PLUGIN_ROOT_DIR "${CMAKE_BINARY_DIR}/deploy/Garmin GI260 Popout" CACHE PATH "X-Plane plugin deployment directory")
 set(XPLANE_PLUGIN_OUTPUT_DIR "${XPLANE_PLUGIN_ROOT_DIR}/64")
 
 add_library(GARMIN_GI260 SHARED

@@ -17,7 +17,7 @@ Generated binaries, local toolchains, rollback folders, PSD source files, and th
 Install or unpack the X-Plane SDK locally, then point CMake at it:
 
 ```powershell
-cmake -S . -B build -DXPLANE_SDK_DIR="C:/Path/To/XPlaneSDK"
+cmake -S . -B build -DXPLANE_SDK_DIR="<X-PlaneSDK>"
 cmake --build build --config Release
 ```
 
@@ -25,16 +25,16 @@ For local convenience, an ignored `SDK/` folder at the repo root is also support
 
 ## Deployment
 
-By default, CMake deploys to:
+By default, CMake deploys to a repo-local staging folder:
 
 ```text
-D:/SteamLibrary/steamapps/common/X-Plane 12/Resources/plugins/Garmin GI260 Popout
+build/deploy/Garmin GI260 Popout
 ```
 
 Override with:
 
 ```powershell
-cmake -S . -B build -DXPLANE_PLUGIN_ROOT_DIR="D:/Path/To/X-Plane 12/Resources/plugins/Garmin GI260 Popout"
+cmake -S . -B build -DXPLANE_PLUGIN_ROOT_DIR="<X-Plane 12>/Resources/plugins/Garmin GI260 Popout"
 ```
 
 The final Windows plugin binary is `64/win.xpl`.
