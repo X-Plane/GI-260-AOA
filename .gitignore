@@ -7,6 +7,7 @@ xlua2/
 private_notes*.md
 3D Model/
 rollback*/
+local_backups/
 .vscode/
 *.psd
 *.xpl

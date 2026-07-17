@@ -19,7 +19,6 @@ local XPLM = {
     WindowDecorationRoundRectangle = 1
 }
 
-local ALIGNMENT_TEST_ALL_LEDS = false
 local MATERIAL_ATLAS_SIZE = 2048.0
 local SOURCE_LED_LEFT = 42.0
 local SOURCE_LED_RIGHT = 222.0
@@ -135,7 +134,6 @@ local config = {
     display_luminance = 1.0,
     element_emissive_gain = 1.0,
     draw_background_in_3d = 0,
-    popup_uses_design_mapping = 1,
     popup_lock_native_aspect = 1,
     element_align_scale_x = 0.95,
     element_align_scale_y = 0.96,
@@ -145,16 +143,6 @@ local config = {
     element_bbox_right_px = 1957.0,
     element_bbox_top_px = 451.0,
     element_bbox_bottom_px = 1755.0,
-    tune_mesh_enabled = 0,
-    tune_apply_to_all_elements = 0,
-    tune_tl_x = 0.0,
-    tune_tl_y = DESIGN_H,
-    tune_tr_x = DESIGN_W,
-    tune_tr_y = DESIGN_H,
-    tune_bl_x = 0.0,
-    tune_bl_y = 0.0,
-    tune_br_x = DESIGN_W,
-    tune_br_y = 0.0,
     aircraft_vso_kts = 0.0,
     aircraft_warning_aoa_deg = 10.0,
     normalized_zero_aoa_deg = 0.0,
@@ -246,19 +234,6 @@ local state = {
     scenario = "OFF",
     unit_pitch_in_acf = 0.0,
     unit_pitch_object_index = -1
-}
-
-local tuning = {
-    mesh_enabled = true,
-    apply_to_all = true,
-    tl_x = 0.0,
-    tl_y = DESIGN_H,
-    tr_x = DESIGN_W,
-    tr_y = DESIGN_H,
-    bl_x = 0.0,
-    bl_y = 0.0,
-    br_x = DESIGN_W,
-    br_y = 0.0
 }
 
 local function log(msg)
@@ -466,27 +441,11 @@ local function read_config()
     f:close()
 end
 
-local function initialize_tuning_from_config()
-    tuning.mesh_enabled = config.tune_mesh_enabled ~= 0
-    tuning.apply_to_all = config.tune_apply_to_all_elements ~= 0
-    tuning.tl_x = config.tune_tl_x
-    tuning.tl_y = config.tune_tl_y
-    tuning.tr_x = config.tune_tr_x
-    tuning.tr_y = config.tune_tr_y
-    tuning.bl_x = config.tune_bl_x
-    tuning.bl_y = config.tune_bl_y
-    tuning.br_x = config.tune_br_x
-    tuning.br_y = config.tune_br_y
-end
-
 local function atlas_x_to_panel(x)
-    -- ATTR_cockpit_device uses the OBJ's existing UVs directly against the
-    -- custom device framebuffer; it does not normalize the display UV island.
     return (x / MATERIAL_ATLAS_SIZE) * DESIGN_W
 end
 
 local function atlas_y_to_panel(y)
-    -- Material-painting tools report Y from the top; panel coordinates are Y-up.
     return (1.0 - (y / MATERIAL_ATLAS_SIZE)) * DESIGN_H
 end
 
@@ -1338,13 +1297,6 @@ local function night_led_mask_ratio()
     return apply_curve01(t, config.night_led_black_mask_power)
 end
 
-local function use_tuned_mapping()
-    if config.popup_uses_design_mapping ~= 0 and draw_context == "popup" then
-        return false
-    end
-    return tuning.mesh_enabled
-end
-
 local function draw_line(start_x, start_y, end_x, end_y, width, color)
     local verts = {
         { x = start_x, y = start_y },
@@ -1360,88 +1312,15 @@ local function fill_rect_black(left, top, right, bottom)
 end
 
 local function fill_panel_black()
-    local left = 0.0
-    local right = DESIGN_W
-    local bottom = 0.0
-    local top = DESIGN_H
-
-    if use_tuned_mapping() then
-        left = math.min(left, tuning.tl_x, tuning.bl_x, tuning.tr_x, tuning.br_x) - 8.0
-        right = math.max(right, tuning.tl_x, tuning.bl_x, tuning.tr_x, tuning.br_x) + 8.0
-        bottom = math.min(bottom, tuning.tl_y, tuning.bl_y, tuning.tr_y, tuning.br_y) - 8.0
-        top = math.max(top, tuning.tl_y, tuning.bl_y, tuning.tr_y, tuning.br_y) + 8.0
-    end
-
-    -- Match the PanelGraphics sample: an opaque, full-width black line is the
-    -- most reliable way to seed the framebuffer with alpha=1 before textures.
-    fill_rect_black(left, top, right, bottom)
-end
-
-local function tuning_enabled()
-    return use_tuned_mapping()
-end
-
-local function map_tuned_point(x, y)
-    local u = clamp(x / DESIGN_W, -4.0, 5.0)
-    local v = clamp(y / DESIGN_H, -4.0, 5.0)
-    local omt_u = 1.0 - u
-    local omt_v = 1.0 - v
-    return {
-        x = tuning.bl_x * omt_u * omt_v + tuning.br_x * u * omt_v + tuning.tl_x * omt_u * v + tuning.tr_x * u * v,
-        y = tuning.bl_y * omt_u * omt_v + tuning.br_y * u * omt_v + tuning.tl_y * omt_u * v + tuning.tr_y * u * v
-    }
+    fill_rect_black(0.0, DESIGN_H, DESIGN_W, 0.0)
 end
 
 local draw_atlas_image_in
-local draw_atlas_image_mesh
-
-local function draw_image_mesh_in_rect(image, alpha, black_mask, left, top, right, bottom)
-    if image == nil then return end
-    local bl = map_tuned_point(left, bottom)
-    local br = map_tuned_point(right, bottom)
-    local tl = map_tuned_point(left, top)
-    local tr = map_tuned_point(right, top)
-
-    -- If the tuning quad is still an axis-aligned rectangle, prefer DrawIn.
-    -- The 12.4.4 Panel Graphics preview has shown unreliable atlas sampling on
-    -- cockpit-device meshes, while DrawIn matches the sample-code path.
-    if math.abs(tl.y - tr.y) < 0.001 and math.abs(bl.y - br.y) < 0.001
-        and math.abs(tl.x - bl.x) < 0.001 and math.abs(tr.x - br.x) < 0.001 then
-        local draw_left = math.min(tl.x, bl.x)
-        local draw_right = math.max(tr.x, br.x)
-        local draw_top = math.max(tl.y, tr.y)
-        local draw_bottom = math.min(bl.y, br.y)
-        draw_atlas_image_in(image, alpha, draw_left, draw_top, draw_right, draw_bottom)
-        if black_mask and black_mask > 0.0 then
-            XPLMTextureAtlasDrawIn(atlas, image, XPLMMakeColor(0.0, 0.0, 0.0, black_mask), draw_left, draw_top, draw_right, draw_bottom)
-        end
-        return
-    end
-
-    local mesh = {
-        { x = bl.x, y = bl.y, s = 0.0, t = 0.0 },
-        { x = tl.x, y = tl.y, s = 0.0, t = 1.0 },
-        { x = br.x, y = br.y, s = 1.0, t = 0.0 },
-        { x = tr.x, y = tr.y, s = 1.0, t = 1.0 }
-    }
-    draw_atlas_image_mesh(image, alpha, mesh)
-    if black_mask and black_mask > 0.0 then
-        XPLMTextureAtlasDrawMesh(atlas, image, XPLMMakeColor(0.0, 0.0, 0.0, black_mask), mesh, 4)
-    end
-end
 
 function draw_atlas_image_in(image, alpha, left, top, right, bottom)
     local draw_alpha = alpha or 1.0
-    -- XPLMMakeColor clamps RGB to 0..1, so atlas tinting cannot create true HDR
-    -- emission. 3D cockpit screen luminance is controlled by brightness_cb().
     local gain = clamp((config.display_luminance or 1.0) * (config.element_emissive_gain or 1.0), 0.0, 1.0)
     XPLMTextureAtlasDrawIn(atlas, image, XPLMMakeColor(gain, gain, gain, draw_alpha), left, top, right, bottom)
-end
-
-function draw_atlas_image_mesh(image, alpha, mesh)
-    local draw_alpha = alpha or 1.0
-    local gain = clamp((config.display_luminance or 1.0) * (config.element_emissive_gain or 1.0), 0.0, 1.0)
-    XPLMTextureAtlasDrawMesh(atlas, image, XPLMMakeColor(gain, gain, gain, draw_alpha), mesh, 4)
 end
 
 local function apply_element_alignment(left, top, right, bottom)
@@ -1473,10 +1352,6 @@ local function draw_image_centered(asset, alpha, black_mask)
     local right = asset.center_x + w * 0.5
     local bottom = panel_center_y - h * 0.5
     left, top, right, bottom = apply_element_alignment(left, top, right, bottom)
-    if tuning_enabled() and tuning.apply_to_all then
-        draw_image_mesh_in_rect(asset.image, alpha, black_mask, left, top, right, bottom)
-        return
-    end
     draw_atlas_image_in(asset.image, alpha, left, top, right, bottom)
     if black_mask and black_mask > 0.0 then
         XPLMTextureAtlasDrawIn(atlas, asset.image, XPLMMakeColor(0.0, 0.0, 0.0, black_mask), left, top, right, bottom)
@@ -1503,11 +1378,7 @@ local function draw_background_asset(asset, alpha)
     local top = DESIGN_H - asset.center_y + h * 0.5
     local right = asset.center_x + w * 0.5
     local bottom = DESIGN_H - asset.center_y - h * 0.5
-    if tuning_enabled() then
-        draw_image_mesh_in_rect(asset.image, alpha, 0.0, left, top, right, bottom)
-    else
-        XPLMTextureAtlasDrawIn(atlas, asset.image, XPLMMakeColor(1, 1, 1, alpha or 1.0), left, top, right, bottom)
-    end
+    XPLMTextureAtlasDrawIn(atlas, asset.image, XPLMMakeColor(1, 1, 1, alpha or 1.0), left, top, right, bottom)
 end
 
 local function screen_draw_cb(ref)
@@ -1534,7 +1405,7 @@ local function screen_draw_cb(ref)
 
     for _, id in ipairs({ MODULE.RU, MODULE.RL, MODULE.YU, MODULE.YL, MODULE.YS, MODULE.YB, MODULE.GS, MODULE.GC, MODULE.GU, MODULE.GM, MODULE.GL }) do
         local m = modules[id]
-        if m.visible or ALIGNMENT_TEST_ALL_LEDS then
+        if m.visible then
             draw_image_centered(m, 1.0, led_mask)
         end
     end
@@ -1720,7 +1591,6 @@ function XPluginStart()
     state.xlua_loaded = 1
     discover_aircraft_paths()
     read_config()
-    initialize_tuning_from_config()
     update_alignment_from_bbox()
     validate_module_thresholds()
     initialize_datarefs()
