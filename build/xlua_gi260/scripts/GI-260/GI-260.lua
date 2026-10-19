@@ -1688,12 +1688,20 @@ function XPluginStop()
     end
 end
 
+local MSG_PLANE_CRASHED = XPLM_MSG_PLANE_CRASHED or 101
+local MSG_PLANE_LOADED = XPLM_MSG_PLANE_LOADED or 102
+local MSG_AIRPORT_LOADED = XPLM_MSG_AIRPORT_LOADED or 103
+
 function XPluginReceiveMessage(from, msg, param)
-    -- Aircraft reload/crash message IDs vary by exposed constants; keep this
-    -- conservative and reset on all X-Plane-originated messages that reach us.
-    if from == XPLM_PLUGIN_XPLANE then
+    if from ~= XPLM_PLUGIN_XPLANE then return end
+    -- Reset only on crash / user plane loaded / new flight. Other X-Plane
+    -- messages (one arrives every ~60 s) used to replay the power-up sweep.
+    if msg == MSG_PLANE_CRASHED or msg == MSG_AIRPORT_LOADED
+        or (msg == MSG_PLANE_LOADED and (param == 0 or param == nil)) then
         reset_runtime_state()
         discover_aircraft_paths()
         initialize_datarefs()
+    else
+        log(string.format("message %s (param %s) ignored", tostring(msg), tostring(param)))
     end
 end
