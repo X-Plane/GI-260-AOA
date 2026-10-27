@@ -113,6 +113,8 @@ local config = {
     initial_status = 0,
     enable_popup = 1,
     arm_ias_kts = 50.0,
+    disarm_ground_ias_kts = 40.0,
+    disarm_ground_seconds = 3.0,
     force_warning_on_stall_warning = true,
     audio_arm_delay_seconds = 15.0,
     audio_startup_delay_seconds = 15.0,
@@ -158,7 +160,8 @@ local config = {
     yellow_lower_chevron_aoa_deg = 7.0,
     yellow_upper_chevron_aoa_deg = 8.0,
     red_lower_aoa_deg = 9.0,
-    red_upper_aoa_deg = 10.0
+    red_upper_aoa_deg = 10.0,
+    red_upper_alpha_margin_deg = 1.0,
 }
 
 local dr = {}
@@ -182,6 +185,8 @@ local config_path = ""
 local state = {
     was_powered = false,
     is_armed = false,
+    armed_since_power_on = false,
+    ground_disarm_held = 0.0,
     is_muted = false,
     test_button_pressed = false,
     mute_button_pressed = false,
@@ -831,7 +836,19 @@ local function update_aoa_values(elapsed)
     if config.force_warning_on_stall_warning and stall_warning_active() then
         target_units = math.max(target_units, config.red_lower_aoa_deg)
     end
-    target_units = clamp(target_units, 0.0, config.red_upper_aoa_deg)
+    -- Past the stall-warning alpha (lower red), real alpha drives the upper red:
+    -- it lights red_upper_alpha_margin_deg above the warning alpha. Airborne
+    -- only, since parked aircraft can report wrapped alpha.
+    local warn_alpha = critical_aoa_deg()
+    if not state.on_ground and config.red_upper_alpha_margin_deg > 0.0
+        and state.raw_aoa_deg >= warn_alpha and state.raw_aoa_deg < 90.0 then
+        target_units = math.max(target_units, config.red_lower_aoa_deg
+            + (state.raw_aoa_deg - warn_alpha) * (config.red_upper_aoa_deg - config.red_lower_aoa_deg)
+            / config.red_upper_alpha_margin_deg)
+    end
+    -- Ceiling sits above the top threshold: the smoothing filter only creeps up
+    -- to its target, so a target of exactly red_upper never lit the upper red.
+    target_units = clamp(target_units, 0.0, config.red_upper_aoa_deg + 1.0)
     state.raw_aoa_units = target_units
 
     if not state.has_filtered_aoa or config.aoa_smoothing_seconds <= 0.0 then
@@ -876,7 +893,8 @@ local function validate_sources(raw_ias)
             reason = "missing stall_warning_ratio dataref"
         elseif state.stall_warning_ratio ~= state.stall_warning_ratio then
             reason = "bad stall_warning_ratio"
-        elseif dr.stall_warn_alpha == nil or config.aircraft_warning_aoa_deg <= config.normalized_zero_aoa_deg + 0.1 or config.aircraft_warning_aoa_deg > 90.0 then
+        elseif dr.stall_warn_alpha == nil or config.aircraft_warning_aoa_deg ~= config.aircraft_warning_aoa_deg
+            or config.aircraft_warning_aoa_deg <= config.normalized_zero_aoa_deg + 0.1 or config.aircraft_warning_aoa_deg > 90.0 then
             reason = string.format("bad stall warning alpha %.1f deg", config.aircraft_warning_aoa_deg)
         elseif approach_aoa_deg() <= config.normalized_zero_aoa_deg or approach_aoa_deg() >= critical_aoa_deg() then
             reason = string.format("bad approach alpha %.1f deg", approach_aoa_deg())
@@ -964,14 +982,37 @@ end
 local function update_arming(ias, powered, elapsed)
     if not powered then
         state.is_armed = false
+        state.armed_since_power_on = false
+        state.ground_disarm_held = 0.0
         state.audio_delay_remaining = 0.0
         return false
+    end
+
+    -- Each takeoff arms again at arm_ias_kts: after a landing the unit
+    -- disarms once it has been on the ground and slower than
+    -- disarm_ground_ias_kts for disarm_ground_seconds (a bounce keeps it armed).
+    -- In the air it stays armed at any speed so a stall is still annunciated.
+    if state.is_armed and config.arm_ias_kts > 0.0 and state.on_ground
+        and ias < math.min(config.disarm_ground_ias_kts, config.arm_ias_kts) then
+        state.ground_disarm_held = state.ground_disarm_held + math.max(0.0, elapsed)
+        if state.ground_disarm_held >= config.disarm_ground_seconds then
+            state.is_armed = false
+            state.audio_delay_remaining = 0.0
+        end
+    else
+        state.ground_disarm_held = 0.0
     end
 
     local should_arm = config.arm_ias_kts <= 0.0 or ias > config.arm_ias_kts
     if should_arm and not state.is_armed then
         state.is_armed = true
-        state.audio_delay_remaining = config.audio_arm_delay_seconds
+        state.ground_disarm_held = 0.0
+        -- The arming audio delay applies to the first takeoff after power-on
+        -- only; later takeoffs keep the audio as before the re-arm existed.
+        if not state.armed_since_power_on then
+            state.audio_delay_remaining = config.audio_arm_delay_seconds
+        end
+        state.armed_since_power_on = true
     end
 
     if state.is_armed and state.audio_delay_remaining > 0.0 then
@@ -1097,6 +1138,8 @@ local function reset_runtime_state()
     clear_modules()
     state.was_powered = false
     state.is_armed = false
+    state.armed_since_power_on = false
+    state.ground_disarm_held = 0.0
     state.is_muted = false
     state.test_button_pressed = false
     state.mute_button_pressed = false

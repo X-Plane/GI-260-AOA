@@ -39,9 +39,11 @@ files, and the X-Plane SDK are intentionally not tracked.
 - Yellow caution bars/chevrons above Approach AOA.
 - Upper yellow chevron slow beep alert logic.
 - Red Warning AOA fast beep alert logic.
-- Lower red warning tied to stall-warning behavior; upper red acts as deeper warning/saturation.
-- 50 KIAS arming latch. Before first arm, normal annunciation is suppressed without entering fail mode.
-- Armed state remains latched through landing rollout until power/reset.
+- Lower red warning tied to stall-warning behavior; upper red lights 1 deg of real alpha past
+  the stall-warning alpha (in flight), or when IAS drops below about 0.96 x weight-adjusted Vso.
+- 50 KIAS arming. Before arming, normal annunciation is suppressed without entering fail mode.
+- Once armed it stays armed in the air at any speed. After 3 s on the ground below 40 KIAS it
+  disarms, so every takeoff arms again at 50 KIAS. A bounce does not disarm it.
 - Startup self-test sweep: bottom-to-top illumination, then rapid clear.
 - TEST button logic, including all-on visual self-test.
 - Unpowered TEST hold behavior: alternating red fail chevrons and quick beep event.
@@ -117,6 +119,10 @@ Validation failures include:
 - Missing or impossible flap ratio.
 - Missing weight-on-wheels/ground-state data.
 - Missing or invalid aero/gear normal-force data required for the ground lift-support model.
+
+The approach reference follows weight like a real AOA vane: in the C172 it lights at 52 KIAS at
+max gross (1.3 x 40) and near 45 KIAS at 74% of max gross, where the sim's power-off full-flap
+stall is also correspondingly lower.
 
 Below 50 KIAS before arming is not a failure. It is simply unarmed/no normal
 annunciation.
@@ -354,7 +360,8 @@ The implementation is based around these GI 260 behavior points:
 - Upper yellow triggers slow audible alert logic.
 - Red warning annunciators trigger fast audible alert logic.
 - Self-test fail is alternating red chevrons.
-- The lower red warning threshold is tied to stall-warning behavior.
+- The lower red warning threshold is tied to stall-warning behavior; the upper red is
+  past it, at the stall.
 
 Where X-Plane does not expose the exact physical pitot/AOA/static sensor model,
 the plugin uses aircraft-authored V-speeds, mass, IAS, stall-warning ratio,
